@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "791764218103",
+    "project_id": "taskplay-unip",
+    "storage_bucket": "taskplay-unip.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:791764218103:android:ef9889dc676708321ea3f2",
+        "android_client_info": {
+          "package_name": "com.juliomelodev.taskplay"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfw_57ti15ktO0pEG6FDBmwlu0WpwhkUU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,143 @@
+name: taskplay
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  caddy:
+    logging: *logging
+    image: caddy:2.10-alpine
+    container_name: taskplay-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      # O dominio da API. Definido em deploy/.env; o Caddy resolve o
+      # certificado sozinho contra a Let's Encrypt na primeira subida.
+      TASKPLAY_DOMINIO: ${TASKPLAY_DOMINIO:?defina TASKPLAY_DOMINIO em deploy/.env}
+      TASKPLAY_EMAIL_ACME: ${TASKPLAY_EMAIL_ACME:?defina TASKPLAY_EMAIL_ACME em deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - taskplay
+    depends_on:
+      api:
+        condition: service_started
+
+  migrate:
+    logging: *logging
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: migrador
+    container_name: taskplay-migrate
+    command: ['pnpm', 'prisma', 'migrate', 'deploy']
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - taskplay
+    restart: 'no'
+
+  api:
+    logging: *logging
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    container_name: taskplay-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Montada aqui, e nao no .env, para que a senha exista num lugar
+      # so e nao precise ser repetida em duas variaveis.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      # Nomes de servico do Compose, nao localhost: cada contêiner tem a
+      # propria interface de rede.
+      STORAGE_ENDPOINT: storage
+      STORAGE_PORT: '9000'
+      STORAGE_USE_SSL: 'false'
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://signoz-ingester:4318
+      OTEL_SERVICE_NAME: taskplay-api
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - taskplay
+      - signoz-network
+    mem_limit: 512m
+
+  db:
+    logging: *logging
+    image: postgres:17-alpine
+    container_name: taskplay-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - taskplay
+    mem_limit: 512m
+
+  storage:
+    logging: *logging
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: taskplay-storage
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY}
+    ports:
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - taskplay
+    mem_limit: 512m
+
+networks:
+  taskplay:
+    name: taskplay
+  signoz-network:
+    external: true
+
+volumes:
+  db-data:
+    name: taskplay-db-data
+  storage-data:
+    name: taskplay-storage-data
+  caddy-data:
+    name: taskplay-caddy-data
+  caddy-config:
+    name: taskplay-caddy-config

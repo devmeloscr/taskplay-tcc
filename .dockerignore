@@ -1,0 +1,28 @@
+.env
+.env.*
+deploy/.env
+.git
+.github
+
+# Reinstalado dentro da imagem, na arquitetura do servidor. Copiar o
+# node_modules do macOS traria binarios que nao rodam em Linux.
+node_modules
+**/node_modules
+
+# Regerado pelo build.
+dist
+.nx
+.expo
+libs/api/database/src/generated
+
+# Nada disso alcanca a API em producao.
+apps/mobile
+apps/api-e2e
+docs
+observability
+tools
+*.md
+!README.md
+
+.DS_Store
+.vscode

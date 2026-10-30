@@ -1,0 +1,554 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Family {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(120)
+
+  tcleVersion    String?   @map("tcle_version") @db.VarChar(20)
+  tcleAcceptedAt DateTime? @map("tcle_accepted_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users         User[]
+  tasks         Task[]
+  storeItems    StoreItem[]
+  purchases     Purchase[]
+  notifications Notification[]
+  devices       Device[]
+  enrollments   DeviceEnrollment[]
+  auditLogs     FamilyAuditLog[]
+
+  @@map("families")
+}
+
+enum UserRole {
+  /// Responsavel. Administra a familia: cria tarefas, aprova evidencias,
+  /// define a loja e entrega as recompensas.
+  PARENT
+  /// Filho. Executa tarefas, acumula pontos e compra na loja.
+  CHILD
+
+  @@map("user_role")
+}
+
+model User {
+  id       String   @id @default(uuid()) @db.Uuid
+  familyId String   @map("family_id") @db.Uuid
+  name     String   @db.VarChar(80)
+  role     UserRole
+
+  birthDate DateTime? @map("birth_date") @db.Date
+
+  /// Credenciais - ver nota do modelo. `email` e unico no sistema inteiro
+  /// (nao por familia) porque e a chave de recuperacao de acesso.
+  email        String? @unique @db.VarChar(180)
+  passwordHash String? @map("password_hash") @db.VarChar(255)
+
+  pinHash String? @map("pin_hash") @db.VarChar(255)
+
+  failedAuthAttempts Int       @default(0) @map("failed_auth_attempts")
+  lockedUntil        DateTime? @map("locked_until")
+
+  deactivatedAt DateTime? @map("deactivated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  family           Family         @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  wallet           Wallet?
+  createdTasks     Task[]         @relation("TaskCreator")
+  assignedTasks    Task[]         @relation("TaskAssignee")
+  evidences        TaskEvidence[] @relation("EvidenceAuthor")
+  reviewedEvidence TaskEvidence[] @relation("EvidenceReviewer")
+  purchases        Purchase[]     @relation("PurchaseBuyer")
+  fulfilledOrders  Purchase[]     @relation("PurchaseFulfiller")
+  createdItems     StoreItem[]
+  transfersMade    TaskTransfer[] @relation("TransferFrom")
+  transfersGot     TaskTransfer[] @relation("TransferTo")
+  notifications    Notification[]
+
+  sessions           DeviceSession[]
+  enrollments        DeviceEnrollment[] @relation("EnrollmentSubject")
+  createdEnrollments DeviceEnrollment[] @relation("EnrollmentCreator")
+
+  /// Administracao da familia: o que este perfil fez, e o que fizeram com ele.
+  auditActions FamilyAuditLog[] @relation("AuditActor")
+  auditTargets FamilyAuditLog[] @relation("AuditTarget")
+
+  @@index([familyId, role])
+  @@map("users")
+}
+
+/// Ciclo de vida de uma tarefa (objetivos b, c, e).
+enum TaskStatus {
+  /// Criada e atribuida, aguardando execucao.
+  PENDING
+  /// O filho registrou a conclusao; aguarda verificacao.
+  SUBMITTED
+  /// Verificacao concluida com aprovacao - momento em que os pontos sao
+  /// creditados.
+  APPROVED
+  /// Verificacao recusada. A tarefa volta a ser executavel: o filho pode
+  /// enviar nova evidencia.
+  REJECTED
+  /// Prazo vencido sem conclusao. Dispara a penalidade construtiva (objetivo e).
+  EXPIRED
+  /// Cancelada pelo responsavel. Nao gera pontos nem penalidade.
+  CANCELLED
+
+  @@map("task_status")
+}
+
+/// Como a conclusao da tarefa e verificada (objetivo c).
+enum TaskVerification {
+  /// Apenas aprovacao do responsavel. Padrao para tarefas sem resultado visual
+  /// ("estudar 30 minutos").
+  MANUAL
+  /// Foto classificada por API de visao computacional, com revisao do
+  /// responsavel quando o veredito for inconclusivo ou quando a tarefa exigir.
+  IMAGE
+
+  @@map("task_verification")
+}
+
+model Task {
+  id          String  @id @default(uuid()) @db.Uuid
+  familyId    String  @map("family_id") @db.Uuid
+  title       String  @db.VarChar(120)
+  description String? @db.Text
+
+  createdById String @map("created_by_id") @db.Uuid
+  assigneeId  String @map("assignee_id") @db.Uuid
+
+  points       Int
+  dueAt        DateTime         @map("due_at")
+  status       TaskStatus       @default(PENDING)
+  verification TaskVerification @default(MANUAL)
+
+  completedAt DateTime? @map("completed_at")
+  /// Momento da decisao de verificacao (aprovacao ou recusa).
+  reviewedAt  DateTime? @map("reviewed_at")
+
+  compensationForId String? @map("compensation_for_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  family          Family              @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdBy       User                @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  assignee        User                @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+  compensationFor Task?               @relation("TaskCompensation", fields: [compensationForId], references: [id], onDelete: SetNull)
+  compensations   Task[]              @relation("TaskCompensation")
+  evidences       TaskEvidence[]
+  transfers       TaskTransfer[]
+  transactions    WalletTransaction[]
+  notifications   Notification[]
+
+  @@index([familyId, status])
+  @@index([assigneeId, status])
+  @@index([status, dueAt])
+  @@map("tasks")
+}
+
+enum AiVerdict {
+  APPROVED
+  REJECTED
+  /// A classificacao nao atingiu o limiar de confianca. Nao e uma recusa: cai
+  /// obrigatoriamente para revisao do responsavel.
+  INCONCLUSIVE
+
+  @@map("ai_verdict")
+}
+
+/// Decisao humana do responsavel sobre uma evidencia (objetivo c).
+enum ReviewDecision {
+  APPROVED
+  REJECTED
+
+  @@map("review_decision")
+}
+
+model TaskEvidence {
+  id            String @id @default(uuid()) @db.Uuid
+  taskId        String @map("task_id") @db.Uuid
+  submittedById String @map("submitted_by_id") @db.Uuid
+
+  imageKey         String?   @map("image_key") @db.VarChar(255)
+  imageDiscardedAt DateTime? @map("image_discarded_at")
+  note             String?   @db.Text
+
+  /// Resultado da classificacao automatica. Nulo quando a tarefa e de
+  /// verificacao manual ou quando a chamada a API ainda nao ocorreu.
+  aiVerdict     AiVerdict? @map("ai_verdict")
+  aiConfidence  Float?     @map("ai_confidence")
+  /// Modelo/versao do classificador. Sem isso, resultados coletados antes e
+  /// depois de uma troca de provedor nao sao comparaveis.
+  aiModel       String?    @map("ai_model") @db.VarChar(120)
+  aiEvaluatedAt DateTime?  @map("ai_evaluated_at")
+
+  reviewDecision ReviewDecision? @map("review_decision")
+  reviewedById   String?         @map("reviewed_by_id") @db.Uuid
+  reviewedAt     DateTime?       @map("reviewed_at")
+  reviewComment  String?         @map("review_comment") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task        Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  submittedBy User  @relation("EvidenceAuthor", fields: [submittedById], references: [id], onDelete: Cascade)
+  reviewedBy  User? @relation("EvidenceReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@map("task_evidences")
+}
+
+model Wallet {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  balance Int @default(0)
+
+  lifetimeEarned Int @default(0) @map("lifetime_earned")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+enum TransactionReason {
+  /// Credito por tarefa aprovada (objetivo d).
+  TASK_COMPLETED
+  /// Debito por atraso (objetivo e).
+  LATE_PENALTY
+  /// Debito por compra na loja (objetivo d).
+  STORE_PURCHASE
+  MANUAL_ADJUSTMENT
+
+  @@map("transaction_reason")
+}
+
+model WalletTransaction {
+  id       String @id @default(uuid()) @db.Uuid
+  walletId String @map("wallet_id") @db.Uuid
+
+  /// Variacao aplicada: positiva no credito, negativa no debito e na
+  /// penalidade.
+  delta        Int
+  balanceAfter Int @map("balance_after")
+
+  reason TransactionReason
+  note   String?           @db.VarChar(255)
+
+  /// Origem do lancamento, quando existe. Sao ligacoes opcionais porque um
+  /// ajuste manual nao vem de tarefa nem de compra.
+  taskId     String? @map("task_id") @db.Uuid
+  purchaseId String? @map("purchase_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  wallet   Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  task     Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  @@index([walletId, createdAt])
+  @@map("wallet_transactions")
+}
+
+/// Natureza de um item da loja (objetivos d, f).
+enum StoreItemKind {
+  REWARD
+  /// Carta de Transferencia: item com efeito dentro do proprio sistema -
+  /// repassa uma tarefa a outro membro (objetivo f).
+  TRANSFER_LETTER
+
+  @@map("store_item_kind")
+}
+
+model StoreItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  familyId    String  @map("family_id") @db.Uuid
+  name        String  @db.VarChar(120)
+  description String? @db.Text
+
+  kind       StoreItemKind @default(REWARD)
+  costPoints Int           @map("cost_points")
+
+  /// Retirada de circulacao e feita por este campo, nao por exclusao: apagar o
+  /// item invalidaria as compras ja registradas no razao.
+  active Boolean @default(true)
+
+  /// Quantidade disponivel. Nulo significa ilimitado - o caso comum, ja que a
+  /// maioria das recompensas e um combinado e nao um estoque fisico.
+  stock Int?
+
+  createdById String @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  family    Family     @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdBy User       @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  purchases Purchase[]
+
+  @@index([familyId, active])
+  @@map("store_items")
+}
+
+/// Situacao de uma compra (objetivo d).
+enum PurchaseStatus {
+  /// Pontos debitados; recompensa ainda nao entregue pelo responsavel.
+  PENDING
+  /// Entregue. Para a Carta de Transferencia, significa que o repasse foi
+  /// efetivado.
+  FULFILLED
+  /// Cancelada pelo responsavel, com estorno dos pontos por um lancamento
+  /// proprio no razao.
+  CANCELLED
+
+  @@map("purchase_status")
+}
+
+/// Compra de um item da loja (objetivos d, f).
+model Purchase {
+  id       String @id @default(uuid()) @db.Uuid
+  familyId String @map("family_id") @db.Uuid
+  itemId   String @map("item_id") @db.Uuid
+  buyerId  String @map("buyer_id") @db.Uuid
+
+  costPoints Int @map("cost_points")
+
+  status        PurchaseStatus @default(PENDING)
+  fulfilledById String?        @map("fulfilled_by_id") @db.Uuid
+  fulfilledAt   DateTime?      @map("fulfilled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  family      Family              @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  item        StoreItem           @relation(fields: [itemId], references: [id], onDelete: NoAction)
+  buyer       User                @relation("PurchaseBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  fulfilledBy User?               @relation("PurchaseFulfiller", fields: [fulfilledById], references: [id], onDelete: SetNull)
+  transaction WalletTransaction[]
+  transfer    TaskTransfer?
+
+  @@index([familyId, createdAt])
+  @@index([buyerId, status])
+  @@map("purchases")
+}
+
+model TaskTransfer {
+  id         String @id @default(uuid()) @db.Uuid
+  taskId     String @map("task_id") @db.Uuid
+  fromUserId String @map("from_user_id") @db.Uuid
+  toUserId   String @map("to_user_id") @db.Uuid
+
+  purchaseId String? @unique @map("purchase_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task     Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromUser User      @relation("TransferFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User      @relation("TransferTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@map("task_transfers")
+}
+
+/// Motivo da notificacao (objetivos e, g).
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  TASK_APPROVED
+  TASK_REJECTED
+  TASK_TRANSFERRED
+  POINTS_CHANGED
+  PURCHASE_FULFILLED
+  STORE_WITHOUT_REWARDS
+
+  @@map("notification_type")
+}
+
+model Notification {
+  id       String           @id @default(uuid()) @db.Uuid
+  familyId String           @map("family_id") @db.Uuid
+  userId   String           @map("user_id") @db.Uuid
+  type     NotificationType
+
+  title String @db.VarChar(120)
+  body  String @db.VarChar(255)
+
+  taskId String? @map("task_id") @db.Uuid
+
+  persistentUntil DateTime? @map("persistent_until")
+
+  /// Agendamento. Um lembrete de prazo e criado no momento da tarefa e enviado
+  /// horas depois; nulo significa envio imediato.
+  scheduledFor DateTime? @map("scheduled_for")
+  sentAt       DateTime? @map("sent_at")
+  readAt       DateTime? @map("read_at")
+
+  pushTicketId String? @map("push_ticket_id") @db.VarChar(64)
+
+  pushError String? @map("push_error") @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task   Task?  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  /// "Nao lidas deste usuario" e a consulta que abre o aplicativo; "pendentes
+  /// de envio" e a que a rotina de disparo executa em intervalo fixo.
+  @@index([userId, readAt])
+  @@index([scheduledFor, sentAt])
+  @@map("notifications")
+}
+
+enum DeviceMode {
+  /// Celular do responsavel ou tablet da familia. Varios perfis convivem no
+  /// mesmo aparelho e o aplicativo abre num seletor.
+  SHARED
+  /// Aparelho proprio de um filho mais velho. Um unico perfil, sem seletor.
+  PERSONAL
+
+  @@map("device_mode")
+}
+
+model Device {
+  id       String     @id @default(uuid()) @db.Uuid
+  familyId String     @map("family_id") @db.Uuid
+  mode     DeviceMode
+
+  /// Rotulo que o responsavel ve na lista de aparelhos ("iPhone da Ana").
+  /// Fornecido pelo aplicativo a partir do nome do sistema.
+  label    String  @db.VarChar(80)
+  platform String  @db.VarChar(20)
+  model    String? @db.VarChar(80)
+
+  lastSeenAt DateTime? @map("last_seen_at")
+
+  pushToken          String?   @map("push_token") @db.VarChar(255)
+  pushTokenUpdatedAt DateTime? @map("push_token_updated_at")
+
+  /// Revogacao logica: um aparelho revogado perde o acesso mas continua no
+  /// historico, para que o responsavel veja que a revogacao aconteceu.
+  revokedAt DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  family   Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  sessions DeviceSession[]
+
+  @@index([familyId, revokedAt])
+  @@map("devices")
+}
+
+model DeviceSession {
+  id       String @id @default(uuid()) @db.Uuid
+  deviceId String @map("device_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+
+  refreshTokenHash String    @map("refresh_token_hash") @db.VarChar(64)
+  expiresAt        DateTime  @map("expires_at")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  revokedAt        DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Um perfil tem no maximo uma sessao por aparelho: entrar de novo no mesmo
+  /// perfil renova a linha existente em vez de acumular sessoes orfas.
+  @@unique([deviceId, userId])
+  @@index([userId])
+  @@map("device_sessions")
+}
+
+model DeviceEnrollment {
+  id       String @id @default(uuid()) @db.Uuid
+  familyId String @map("family_id") @db.Uuid
+
+  /// Perfil que o aparelho vai assumir ao consumir o codigo.
+  userId String @map("user_id") @db.Uuid
+
+  codeHash  String    @map("code_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  family    Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user      User   @relation("EnrollmentSubject", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User   @relation("EnrollmentCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([familyId, usedAt])
+  @@map("device_enrollments")
+}
+
+enum FamilyAuditAction {
+  /// Cadastro de um filho.
+  MEMBER_CREATED
+  /// Troca do nome de exibicao.
+  MEMBER_RENAMED
+  /// Data de nascimento definida, alterada ou apagada.
+  MEMBER_BIRTH_DATE_CHANGED
+  /// Passou a ter PIN quem nao tinha.
+  MEMBER_PIN_SET
+  /// Ja tinha PIN e recebeu outro.
+  MEMBER_PIN_CHANGED
+  /// Deixou de ter PIN.
+  MEMBER_PIN_REMOVED
+  /// Saida do nucleo: remocao logica (`User.deactivatedAt`).
+  MEMBER_DEACTIVATED
+  /// Volta ao nucleo, desfazendo a remocao.
+  MEMBER_REACTIVATED
+
+  @@map("family_audit_action")
+}
+
+model FamilyAuditLog {
+  id       String @id @default(uuid()) @db.Uuid
+  familyId String @map("family_id") @db.Uuid
+
+  action FamilyAuditAction
+
+  /// Quem fez. Sempre um responsavel, hoje; nulo so depois de o perfil sumir.
+  actorId   String? @map("actor_id") @db.Uuid
+  actorName String  @map("actor_name") @db.VarChar(80)
+
+  /// Quem foi afetado.
+  targetId   String? @map("target_id") @db.Uuid
+  targetName String  @map("target_name") @db.VarChar(80)
+
+  /// Campo tocado, no nome que o contrato usa (`name`, `birthDate`, `pin`).
+  /// Nulo nas acoes que nao alteram um campo - entrar e sair do nucleo.
+  field String? @db.VarChar(40)
+
+  beforeValue String? @map("before_value") @db.VarChar(120)
+  afterValue  String? @map("after_value") @db.VarChar(120)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  target User?  @relation("AuditTarget", fields: [targetId], references: [id], onDelete: SetNull)
+
+  /// A leitura e sempre "a familia inteira, do mais recente ao mais antigo".
+  @@index([familyId, createdAt])
+  @@map("family_audit_logs")
+}

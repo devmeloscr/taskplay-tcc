@@ -1,0 +1,85 @@
+# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# compiled output
+dist
+tmp
+out-tsc
+
+# dependencies
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# misc
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.nx/cache
+.nx/workspace-data
+.nx/migrate-runs
+.claude/worktrees
+.claude/settings.local.json
+
+# Expo
+node_modules/
+.expo/
+.yarn/
+dist/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+cache/
+# variaveis de ambiente locais
+.env
+# ...e as variantes por modo lidas pelo Expo (.env.production, .env.local),
+# que carregam endereco de servidor e nao devem viajar no repositorio.
+.env.*
+!.env.example
+
+/src/generated/prisma
+
+# Cliente Prisma gerado (regenerado por `pnpm prisma:generate`, ver postinstall)
+libs/api/database/src/generated
+
+# saida do 'expo export'
+apps/mobile/dist
+
+/apps/mobile/android
+/apps/mobile/ios
+
+*firebase-adminsdk*.json
+*-service-account*.json
+
+__pycache__/
+
+# Fotos de participantes do teste de campo (crianças): nunca versionar
+/fotos/

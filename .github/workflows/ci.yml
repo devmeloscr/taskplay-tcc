@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `nx affected` compara com a base; sem o historico completo nao ha
+          # com o que comparar.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Le a versao do .nvmrc: uma unica fonte de verdade entre a maquina
+          # de desenvolvimento e o CI.
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Instalar dependencias
+        # O postinstall roda `prisma generate`; o cliente gerado nao e
+        # versionado, entao precisa ser recriado aqui.
+        run: pnpm install --frozen-lockfile
+
+      - uses: nrwl/nx-set-shas@v4
+
+      - name: Lint e testes dos projetos afetados
+        run: pnpm nx affected -t lint test --parallel=3
+
+      - name: Build dos projetos afetados
+        run: pnpm nx affected -t build --exclude=mobile --parallel=3
+
+      - name: Empacotamento do app pelo Metro
+        run: pnpm nx affected -t export --parallel=1

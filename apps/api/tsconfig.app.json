@@ -1,0 +1,40 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc",
+    "module": "commonjs",
+    // Contraria o `importHelpers: true` do tsconfig.base.json, e so para esta
+    // aplicacao. Com ele ligado, o TypeScript emite `require("tslib")` no
+    // bundle, mas o `generatePackageJson` do webpack nao declara tslib como
+    // dependencia: quem o injeta e o compilador, depois de o Nx ja ter
+    // calculado o grafo. O resultado era uma imagem de producao que compilava
+    // e morria no arranque com "Cannot find module 'tslib'".
+    //
+    // Desligado, os helpers sao embutidos no bundle. Custa alguns KB num
+    // arquivo de 400 KB e elimina uma dependencia de runtime da imagem. O
+    // aplicativo mobile continua com o comportamento padrao: o Metro empacota
+    // o tslib junto e nunca teve esse problema.
+    "importHelpers": false,
+    "types": [
+      "node"
+    ],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "target": "es2021",
+    "moduleResolution": "bundler",
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "jest.config.ts",
+    "jest.config.cts",
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts"
+  ]
+}

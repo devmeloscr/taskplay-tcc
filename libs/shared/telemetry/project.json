@@ -1,0 +1,14 @@
+{
+  "name": "shared-telemetry",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/telemetry/src",
+  "projectType": "library",
+  "tags": [
+    "scope:shared",
+    "type:util"
+  ],
+  "// targets": "to see all targets run: nx show project telemetry --web",
+  "targets": {
+    "typecheck": {}
+  }
+}

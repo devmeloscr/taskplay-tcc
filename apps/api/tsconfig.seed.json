@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    // O seed roda por ts-node, e nao pelo webpack que constroi a API. Duas
+    // diferencas precisam ser ditas aqui:
+    //
+    // `baseUrl`: o `tsconfig-paths` resolve os apelidos `@taskplay/*` a partir
+    // dele, e o repositorio nao o define - o webpack dispensa, o ts-node nao.
+    //
+    // `moduleResolution`: o projeto usa `bundler`, que pressupoe justamente um
+    // empacotador. Sob Node puro a resolucao tem de ser a do Node.
+    // As duas opcoes acima estao depreciadas no TypeScript 6 e param de existir
+    // no 7. O aviso fica silenciado aqui, e nao no tsconfig do projeto, para que
+    // a divida tenha escopo de um arquivo: quando o TS 7 chegar, e este seed que
+    // precisa de outra forma de resolver os apelidos - as libs do repositorio
+    // sao aliases de tsconfig, e nao pacotes do workspace com `package.json`
+    // proprio, que e o que dispensaria `baseUrl` por completo.
+    "ignoreDeprecations": "6.0",
+    "baseUrl": "../..",
+    "moduleResolution": "node"
+  },
+  "include": ["src/seed.ts", "src/app/**/*.ts"]
+}

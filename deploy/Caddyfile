@@ -1,0 +1,38 @@
+{
+	# Endereco usado pela Let's Encrypt para avisar sobre expiracao de
+	# certificado. Vem de deploy/.env.
+	email {$TASKPLAY_EMAIL_ACME}
+
+	# Nao anuncia a versao do Caddy nos cabecalhos de resposta.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+{$TASKPLAY_DOMINIO} {
+	encode zstd gzip
+
+	request_body {
+		max_size 6MB
+	}
+
+	header {
+		# HSTS: uma vez visto em HTTPS, o dominio nunca mais e acessado em
+		# texto claro por este cliente.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	reverse_proxy api:3000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

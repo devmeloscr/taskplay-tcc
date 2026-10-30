@@ -1,0 +1,39 @@
+name: signoz
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  ingester:
+    logging: *logging
+    ports: !override []
+    mem_limit: 512m
+
+  signoz-signoz-0:
+    logging: *logging
+    ports: !override
+      - '127.0.0.1:8080:8080'
+    mem_limit: 768m
+
+  signoz-telemetrystore-clickhouse-0-0:
+    logging: *logging
+    mem_limit: 2500m
+
+  signoz-telemetrykeeper-clickhousekeeper-0:
+    logging: *logging
+    mem_limit: 384m
+
+  signoz-metastore-postgres-0:
+    logging: *logging
+    mem_limit: 256m
+
+  # Os dois que rodam uma vez e encerram: nao tem outro ajuste, mas um loop
+  # num deles tambem encheria o disco.
+  signoz-telemetrystore-clickhouse-user-scripts:
+    logging: *logging
+
+  signoz-telemetrystore-migrator:
+    logging: *logging

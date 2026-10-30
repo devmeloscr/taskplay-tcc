@@ -1,0 +1,37 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false,
+    "moduleResolution": "bundler",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "target": "es2015",
+    "module": "esnext",
+    "lib": ["es2020", "dom"],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "strict": true,
+    "paths": {
+      "@taskplay/shared-types": ["./libs/shared/types/src/index.ts"],
+      "@taskplay/shared-telemetry": ["./libs/shared/telemetry/src/index.ts"],
+      "@taskplay/shared-util-gamification": [
+        "./libs/shared/util-gamification/src/index.ts"
+      ],
+      "@taskplay/api-database": ["./libs/api/database/src/index.ts"],
+      "@taskplay/api-observability": ["./libs/api/observability/src/index.ts"],
+      "@taskplay/api-observability/tracing": [
+        "./libs/api/observability/src/lib/tracing.ts"
+      ],
+      "@taskplay/api-storage": ["./libs/api/storage/src/index.ts"]
+    },
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "exclude": ["node_modules", "tmp"]
+}
